@@ -1,4 +1,6 @@
 # Import necessary libraries
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -224,13 +226,14 @@ COLLISION_EPSILON = 0.8 # Slightly less bouncy
 GRAVITY = np.array([0.0, 0.0, -9.81])
 FLOOR_RESTITUTION = 0.3 # How much bounce off the floor
 FLOOR_FRICTION_COEFF = 0.5 # Coefficient of kinetic friction
-
+EARTH_RADIUS = 6371000
+EARTH_MASS = 5.972168 * math.pow(10,24)
 is_paused = False
 
 # --- Initial States & Objects ---
 ball_1 = Ball(obj_id='ball_1',
               pos=np.array([-1.5, 0.0, 0.109]), # Start touching floor
-              vel=np.array([10.0, 0.1, 0.0]),    # Faster initial speed
+              vel=np.array([5.0, 0.1, 0.0]),    # Faster initial speed
               quat=Quaternion.identity(),
               ang_vel=np.array([0.0, 0.0, 0.0]), # Maybe add initial spin later
               radius=0.109,
@@ -394,283 +397,134 @@ def rk4_step(obj, dt):
 
 def check_and_resolve_collision(obj1, obj2):
     """ Checks and resolves collisions between two RigidBody objects. """
-    # Currently only implements Ball-Pin collision
-    ball = None
-    pin = None
-    if isinstance(obj1, Pin) and isinstance(obj2, Pin):
-        pin1 = obj1
-        pin2 = obj2
-        pin2_pos, pin2_vel, pin2_q, pin2_ang_vel = pin2.pos, pin2.vel, pin2.quat, pin2.ang_vel
-        pin1_pos, pin1_vel, pin1_q, pin1_ang_vel = pin1.pos, pin1.vel, pin1.quat, pin1.ang_vel
+    obj2_pos, obj2_vel, obj2_q, obj2_ang_vel = obj2.pos, obj2.vel, obj2.quat, obj2.ang_vel
+    obj1_pos, obj1_vel, obj1_q, obj1_ang_vel = obj1.pos, obj1.vel, obj1.quat, obj1.ang_vel
 
-        vec_pin1_to_pin2 = pin2_pos - pin1_pos
-        dist_centers_sq = np.dot(vec_pin1_to_pin2, vec_pin1_to_pin2)
+    vec_obj1_to_obj2 = obj2_pos - obj1_pos
+    dist_centers_sq = np.dot(vec_obj1_to_obj2, vec_obj1_to_obj2)
 
-        # Broad Phase
-        bounding_radius_pin1 = np.sqrt(pin1.radius ** 2 + (pin1.height / 2) ** 2)
-        min_dist_centers = pin2.radius + bounding_radius_pin1
-        if dist_centers_sq > min_dist_centers ** 2:
-            return  # Too far apart
+    # Broad Phase
+    bounding_radius_obj1 = np.sqrt(obj1.radius ** 2 + (obj1.height / 2) ** 2)
+    min_dist_centers = obj2.radius + bounding_radius_obj1
+    if dist_centers_sq > min_dist_centers ** 2:
+        return  # Too far apart
 
-        # Detailed Check
-        pin1_z_axis_world = pin1_q.rotate_vector([0, 0, 1])
-        pin1_y_axis_world = pin1_q.rotate_vector([0, 1, 0])
-        pin1_x_axis_world = pin1_q.rotate_vector([1, 0, 0])
+    # Detailed Check
+    obj1_z_axis_world = obj1_q.rotate_vector([0, 0, 1])
+    obj1_y_axis_world = obj1_q.rotate_vector([0, 1, 0])
+    obj1_x_axis_world = obj1_q.rotate_vector([1, 0, 0])
 
-        proj_len = np.dot(vec_pin1_to_pin2, pin1_z_axis_world)
-        closest_pt_on_axis = pin1_pos + proj_len * pin1_z_axis_world
-        vec_axis_to_pin2 = pin2_pos - closest_pt_on_axis
-        dist_axis_to_pin2_sq = np.dot(vec_axis_to_pin2, vec_axis_to_pin2)
-        dist_axis_to_pin2 = np.sqrt(dist_axis_to_pin2_sq) if dist_axis_to_pin2_sq > 0 else 0
-        is_within_height_range = abs(proj_len) <= pin1.height / 2.0
-        # Use slightly tolerance for range check robustness
-        radial_thresh = pin1.radius + pin2.radius
-        is_within_radial_range = dist_axis_to_pin2 < radial_thresh + 1e-5
+    proj_len = np.dot(vec_obj1_to_obj2, obj1_z_axis_world)
+    closest_pt_on_axis = obj1_pos + proj_len * obj1_z_axis_world
+    vec_axis_to_obj2 = obj2_pos - closest_pt_on_axis
+    dist_axis_to_obj2_sq = np.dot(vec_axis_to_obj2, vec_axis_to_obj2)
+    dist_axis_to_obj2 = np.sqrt(dist_axis_to_obj2_sq) if dist_axis_to_obj2_sq > 0 else 0
+    is_within_height_range = abs(proj_len) <= obj1.height / 2.0
+    # Use slightly tolerance for range check robustness
+    radial_thresh = obj1.radius + obj2.radius
+    is_within_radial_range = dist_axis_to_obj2 < radial_thresh + 1e-5
 
-        is_within_cap_height_range = pin1.height / 2.0 < abs(proj_len) < pin1.height / 2.0 + pin2.radius + 1e-5
-        is_radially_inside_cap_proj = dist_axis_to_pin2 < pin1.radius + 1e-5  # pin2 center needs project inside pin1 radius
+    is_within_cap_height_range = obj1.height / 2.0 < abs(proj_len) < obj1.height / 2.0 + obj2.radius + 1e-5
+    is_radially_inside_cap_proj = dist_axis_to_obj2 < obj1.radius + 1e-5  # obj2 center needs to project inside obj1 radius
 
-        collided = False
-        penetration_depth = 0.0
-        contact_normal = np.zeros(3)
-        contact_point_pin2_local = np.zeros(3)
-        contact_point_pin1_local = np.zeros(3)
-        contact_point_pin1_world = np.zeros(3)  # Store world point for calc
+    collided = False
+    penetration_depth = 0.0
+    contact_normal = np.zeros(3)
+    contact_point_obj2_local = np.zeros(3)
+    contact_point_obj1_local = np.zeros(3)
+    contact_point_obj1_world = np.zeros(3)  # Store world point for calc
 
-        # Check Wall Collision
-        if is_within_height_range and is_within_radial_range:
-            penetration_candidate = radial_thresh - dist_axis_to_pin2
-            if penetration_candidate > -1e-5:  # Allow very slight overlap before trigger
-                if dist_axis_to_pin2 > 1e-6:
-                    contact_normal = vec_axis_to_pin2 / dist_axis_to_pin2
-                else:  # pin2 center is on the pin1 axis - push radially
-                    contact_normal = pin1_x_axis_world if abs(np.dot(vec_pin1_to_pin2, pin1_x_axis_world)) > abs(
-                        np.dot(vec_pin1_to_pin2, pin1_y_axis_world)) else pin1_y_axis_world
+    # Check Wall Collision
+    if is_within_height_range and is_within_radial_range:
+        penetration_candidate = radial_thresh - dist_axis_to_obj2
+        if penetration_candidate > -1e-5:  # Allow very slight overlap before trigger
+            if dist_axis_to_obj2 > 1e-6:
+                contact_normal = vec_axis_to_obj2 / dist_axis_to_obj2
+            else:  # obj2 center is on the obj1 axis - push radially
+                contact_normal = obj1_x_axis_world if abs(np.dot(vec_obj1_to_obj2, obj1_x_axis_world)) > abs(
+                    np.dot(vec_obj1_to_obj2, obj1_y_axis_world)) else obj1_y_axis_world
 
-                penetration_depth = max(0, penetration_candidate)  # Ensure non-negative
-                collided = True
-                contact_point_pin2_local = -contact_normal * pin2.radius  # Relative to pin2 center
-                contact_point_pin1_world = closest_pt_on_axis + contact_normal * pin1.radius  # On pin1 surface
-                contact_point_pin1_local = pin1_q.conjugate().rotate_vector(contact_point_pin1_world - pin1_pos)
-                # print(f"Wall Hit: depth={penetration_depth:.4f}")
+            penetration_depth = max(0, penetration_candidate)  # Ensure non-negative
+            collided = True
+            contact_point_obj2_local = -contact_normal * obj2.radius  # Relative to obj2 center
+            contact_point_obj1_world = closest_pt_on_axis + contact_normal * obj1.radius  # On obj1 surface
+            contact_point_obj1_local = obj1_q.conjugate().rotate_vector(contact_point_obj1_world - obj1_pos)
+            # print(f"Wall Hit: depth={penetration_depth:.4f}")
 
-        # Check Cap Collision (only if not already hit wall)
-        # Use fixed cap contact point logic!
-        if not collided and is_within_cap_height_range and is_radially_inside_cap_proj:
-            penetration_candidate = pin2.radius - (abs(proj_len) - pin1.height / 2.0)
-            if penetration_candidate > -1e-5:
-                is_top_cap = proj_len > 0
-                contact_normal = pin1_z_axis_world if is_top_cap else -pin1_z_axis_world
-                penetration_depth = max(0, penetration_candidate)
-                collided = True
+    # Check Cap Collision (only if not already hit wall)
+    # Use fixed cap contact point logic!
+    if not collided and is_within_cap_height_range and is_radially_inside_cap_proj:
+        penetration_candidate = obj2.radius - (abs(proj_len) - obj1.height / 2.0)
+        if penetration_candidate > -1e-5:
+            is_top_cap = proj_len > 0
+            contact_normal = obj1_z_axis_world if is_top_cap else -obj1_z_axis_world
+            penetration_depth = max(0, penetration_candidate)
+            collided = True
 
-                # --- Corrected Cap Contact Point ---
-                cap_center_world = pin1_pos + pin1_z_axis_world * (pin1.height / 2.0 * np.sign(proj_len))
-                # vec_axis_to_pin2 is the vector from axis to pin2 center (in cap plane)
-                contact_point_pin1_world = cap_center_world + vec_axis_to_pin2
-                # --- End Correction ---
+            # --- Corrected Cap Contact Point ---
+            cap_center_world = obj1_pos + obj1_z_axis_world * (obj1.height / 2.0 * np.sign(proj_len))
+            # vec_axis_to_obj2 is the vector from axis to obj2 center (in cap plane)
+            contact_point_obj1_world = cap_center_world + vec_axis_to_obj2
+            # --- End Correction ---
 
-                contact_point_pin2_local = -contact_normal * pin2.radius
-                contact_point_pin1_local = pin1_q.conjugate().rotate_vector(contact_point_pin1_world - pin1_pos)
-                # print(f"Cap Hit: depth={penetration_depth:.4f}")
+            contact_point_obj2_local = -contact_normal * obj2.radius
+            contact_point_obj1_local = obj1_q.conjugate().rotate_vector(contact_point_obj1_world - obj1_pos)
+            # print(f"Cap Hit: depth={penetration_depth:.4f}")
 
-        if not collided or penetration_depth <= 0:
-            return  # No actual collision/penetration
+    if not collided or penetration_depth <= 0:
+        return  # No actual collision/penetration
 
-        # --- Resolve Penetration (move objects apart based on mass) ---
-        total_mass = pin2.mass + pin1.mass
-        inv_total_mass = 1.0 / total_mass if total_mass > 1e-9 else 0
-        move_fraction_pin2 = pin1.mass * inv_total_mass
-        move_fraction_pin1 = pin2.mass * inv_total_mass
+    # --- Resolve Penetration (move objects apart based on mass) ---
+    total_mass = obj2.mass + obj1.mass
+    inv_total_mass = 1.0 / total_mass if total_mass > 1e-9 else 0
+    move_fraction_obj2 = obj1.mass * inv_total_mass
+    move_fraction_obj1 = obj2.mass * inv_total_mass
 
-        # Correction factor slightly > 1 to ensure separation
-        correction_factor = 1.01
-        correction = contact_normal * penetration_depth * correction_factor
-        pin2.pos += correction * move_fraction_pin2
-        pin1.pos -= correction * move_fraction_pin1
+    # Correction factor slightly > 1 to ensure separation
+    correction_factor = 1.01
+    correction = contact_normal * penetration_depth * correction_factor
+    obj2.pos += correction * move_fraction_obj2
+    obj1.pos -= correction * move_fraction_obj1
 
-        # --- Calculate Impulse (velocity change) ---
-        r_pin2_world = pin2_q.rotate_vector(contact_point_pin2_local)  # Vector from pin2 CM to contact
-        r_pin1_world = pin1_q.rotate_vector(contact_point_pin1_local)  # Vector from pin1 CM to contact
+    # --- Calculate Impulse (velocity change) ---
+    r_obj2_world = obj2_q.rotate_vector(contact_point_obj2_local)  # Vector from obj2 CM to contact
+    r_obj1_world = obj1_q.rotate_vector(contact_point_obj1_local)  # Vector from obj1 CM to contact
 
-        v_contact_pin2 = pin2.vel + np.cross(pin2.ang_vel, r_pin2_world)
-        v_contact_pin1 = pin1.vel + np.cross(pin1.ang_vel, r_pin1_world)
-        v_relative = v_contact_pin2 - v_contact_pin1
-        v_rel_normal = np.dot(v_relative, contact_normal)
+    v_contact_obj2 = obj2.vel + np.cross(obj2.ang_vel, r_obj2_world)
+    v_contact_obj1 = obj1.vel + np.cross(obj1.ang_vel, r_obj1_world)
+    v_relative = v_contact_obj2 - v_contact_obj1
+    v_rel_normal = np.dot(v_relative, contact_normal)
 
-        # If moving apart or resting, no impulse needed (vel already corrected by penetration push?)
-        if v_rel_normal >= -1e-4:  # Small tolerance for resting contact separation
-            return
+    # If moving apart or resting, no impulse needed (vel already corrected by penetration push?)
+    if v_rel_normal >= -1e-4:  # Small tolerance for resting contact separation
+        return
 
-        # Use already updated world inverse inertia tensors
-        inv_I_pin2_world = pin2.inv_inertia_world
-        inv_I_pin1_world = pin1.inv_inertia_world
+    # Use already updated world inverse inertia tensors
+    inv_I_obj2_world = obj2.inv_inertia_world
+    inv_I_obj1_world = obj1.inv_inertia_world
 
-        # Impulse calculation terms
-        term_pin2_ang = np.cross(inv_I_pin2_world @ np.cross(r_pin2_world, contact_normal), r_pin2_world)
-        term_pin1_ang = np.cross(inv_I_pin1_world @ np.cross(r_pin1_world, contact_normal), r_pin1_world)
-        ang_impulse_term = np.dot(term_pin2_ang + term_pin1_ang, contact_normal)
+    # Impulse calculation terms
+    term_obj2_ang = np.cross(inv_I_obj2_world @ np.cross(r_obj2_world, contact_normal), r_obj2_world)
+    term_obj1_ang = np.cross(inv_I_obj1_world @ np.cross(r_obj1_world, contact_normal), r_obj1_world)
+    ang_impulse_term = np.dot(term_obj2_ang + term_obj1_ang, contact_normal)
 
-        impulse_denom = pin2.inv_mass + pin1.inv_mass + ang_impulse_term
+    impulse_denom = obj2.inv_mass + obj1.inv_mass + ang_impulse_term
 
-        if abs(impulse_denom) < 1e-9:
-            print("Warning: Impulse denominator near zero. Skipping impulse.")
-            return
+    if abs(impulse_denom) < 1e-9:
+        print("Warning: Impulse denominator near zero. Skipping impulse.")
+        return
 
-        impulse_j = -(1.0 + COLLISION_EPSILON) * v_rel_normal / impulse_denom
-        impulse_vector = impulse_j * contact_normal
+    impulse_j = -(1.0 + COLLISION_EPSILON) * v_rel_normal / impulse_denom
+    impulse_vector = impulse_j * contact_normal
 
-        # --- Apply Impulse ---
-        pin2.vel += impulse_vector * pin2.inv_mass
-        pin1.vel -= impulse_vector * pin1.inv_mass
+    # --- Apply Impulse ---
+    obj2.vel += impulse_vector * obj2.inv_mass
+    obj1.vel -= impulse_vector * obj1.inv_mass
 
-        pin2.ang_vel += inv_I_pin2_world @ np.cross(r_pin2_world, impulse_vector)
-        pin1.ang_vel -= inv_I_pin1_world @ np.cross(r_pin1_world, impulse_vector)
+    obj2.ang_vel += inv_I_obj2_world @ np.cross(r_obj2_world, impulse_vector)
+    obj1.ang_vel -= inv_I_obj1_world @ np.cross(r_obj1_world, impulse_vector)
 
-        # print(f"Collision Resolved: j={impulse_j:.3f}")
-
-    else:
-        if isinstance(obj1, Ball) and isinstance(obj2, Pin):
-            ball = obj1
-            pin = obj2
-        elif isinstance(obj1, Pin) and isinstance(obj2, Ball):
-            ball = obj2
-            pin = obj1
-
-            return # Skip Pin-Pin for now
-        else:
-            return # Unknown pair
-
-        # --- Use object properties directly ---
-        ball_pos, ball_vel, ball_q, ball_ang_vel = ball.pos, ball.vel, ball.quat, ball.ang_vel
-        pin_pos, pin_vel, pin_q, pin_ang_vel = pin.pos, pin.vel, pin.quat, pin.ang_vel
-
-        vec_pin_to_ball = ball_pos - pin_pos
-        dist_centers_sq = np.dot(vec_pin_to_ball, vec_pin_to_ball)
-
-        # Broad Phase
-        bounding_radius_pin = np.sqrt(pin.radius**2 + (pin.height / 2)**2)
-        min_dist_centers = ball.radius + bounding_radius_pin
-        if dist_centers_sq > min_dist_centers**2:
-            return # Too far apart
-
-        # Detailed Check
-        pin_z_axis_world = pin_q.rotate_vector([0, 0, 1])
-        pin_y_axis_world = pin_q.rotate_vector([0, 1, 0])
-        pin_x_axis_world = pin_q.rotate_vector([1, 0, 0])
-
-        proj_len = np.dot(vec_pin_to_ball, pin_z_axis_world)
-        closest_pt_on_axis = pin_pos + proj_len * pin_z_axis_world
-        vec_axis_to_ball = ball_pos - closest_pt_on_axis
-        dist_axis_to_ball_sq = np.dot(vec_axis_to_ball, vec_axis_to_ball)
-        dist_axis_to_ball = np.sqrt(dist_axis_to_ball_sq) if dist_axis_to_ball_sq > 0 else 0
-        is_within_height_range = abs(proj_len) <= pin.height / 2.0
-        # Use slightly tolerance for range check robustness
-        radial_thresh = pin.radius + ball.radius
-        is_within_radial_range = dist_axis_to_ball < radial_thresh + 1e-5
-
-        is_within_cap_height_range = pin.height / 2.0 < abs(proj_len) < pin.height / 2.0 + ball.radius + 1e-5
-        is_radially_inside_cap_proj = dist_axis_to_ball < pin.radius + 1e-5 # Ball center needs project inside pin radius
-
-        collided = False
-        penetration_depth = 0.0
-        contact_normal = np.zeros(3)
-        contact_point_ball_local = np.zeros(3)
-        contact_point_pin_local = np.zeros(3)
-        contact_point_pin_world = np.zeros(3) # Store world point for calc
-
-        # Check Wall Collision
-        if is_within_height_range and is_within_radial_range:
-            penetration_candidate = radial_thresh - dist_axis_to_ball
-            if penetration_candidate > -1e-5: # Allow very slight overlap before trigger
-                if dist_axis_to_ball > 1e-6:
-                    contact_normal = vec_axis_to_ball / dist_axis_to_ball
-                else: # Ball center is on the pin axis - push radially
-                    contact_normal = pin_x_axis_world if abs(np.dot(vec_pin_to_ball, pin_x_axis_world)) > abs(np.dot(vec_pin_to_ball, pin_y_axis_world)) else pin_y_axis_world
-
-                penetration_depth = max(0, penetration_candidate) # Ensure non-negative
-                collided = True
-                contact_point_ball_local = -contact_normal * ball.radius # Relative to ball center
-                contact_point_pin_world = closest_pt_on_axis + contact_normal * pin.radius # On pin surface
-                contact_point_pin_local = pin_q.conjugate().rotate_vector(contact_point_pin_world - pin_pos)
-                # print(f"Wall Hit: depth={penetration_depth:.4f}")
-
-        # Check Cap Collision (only if not already hit wall)
-        # Use fixed cap contact point logic!
-        if not collided and is_within_cap_height_range and is_radially_inside_cap_proj:
-            penetration_candidate = ball.radius - (abs(proj_len) - pin.height / 2.0)
-            if penetration_candidate > -1e-5:
-                is_top_cap = proj_len > 0
-                contact_normal = pin_z_axis_world if is_top_cap else -pin_z_axis_world
-                penetration_depth = max(0, penetration_candidate)
-                collided = True
-
-                # --- Corrected Cap Contact Point ---
-                cap_center_world = pin_pos + pin_z_axis_world * (pin.height / 2.0 * np.sign(proj_len))
-                # vec_axis_to_ball is the vector from axis to ball center (in cap plane)
-                contact_point_pin_world = cap_center_world + vec_axis_to_ball
-                # --- End Correction ---
-
-                contact_point_ball_local = -contact_normal * ball.radius
-                contact_point_pin_local = pin_q.conjugate().rotate_vector(contact_point_pin_world - pin_pos)
-                # print(f"Cap Hit: depth={penetration_depth:.4f}")
-
-        if not collided or penetration_depth <= 0:
-            return # No actual collision/penetration
-
-        # --- Resolve Penetration (move objects apart based on mass) ---
-        total_mass = ball.mass + pin.mass
-        inv_total_mass = 1.0 / total_mass if total_mass > 1e-9 else 0
-        move_fraction_ball = pin.mass * inv_total_mass
-        move_fraction_pin = ball.mass * inv_total_mass
-
-        # Correction factor slightly > 1 to ensure separation
-        correction_factor = 1.01
-        correction = contact_normal * penetration_depth * correction_factor
-        ball.pos += correction * move_fraction_ball
-        pin.pos -= correction * move_fraction_pin
-
-        # --- Calculate Impulse (velocity change) ---
-        r_ball_world = ball_q.rotate_vector(contact_point_ball_local) # Vector from ball CM to contact
-        r_pin_world = pin_q.rotate_vector(contact_point_pin_local)   # Vector from pin CM to contact
-
-        v_contact_ball = ball.vel + np.cross(ball.ang_vel, r_ball_world)
-        v_contact_pin = pin.vel + np.cross(pin.ang_vel, r_pin_world)
-        v_relative = v_contact_ball - v_contact_pin
-        v_rel_normal = np.dot(v_relative, contact_normal)
-
-        # If moving apart or resting, no impulse needed (vel already corrected by penetration push?)
-        if v_rel_normal >= -1e-4: # Small tolerance for resting contact separation
-            return
-
-        # Use already updated world inverse inertia tensors
-        inv_I_ball_world = ball.inv_inertia_world
-        inv_I_pin_world = pin.inv_inertia_world
-
-        # Impulse calculation terms
-        term_ball_ang = np.cross(inv_I_ball_world @ np.cross(r_ball_world, contact_normal), r_ball_world)
-        term_pin_ang = np.cross(inv_I_pin_world @ np.cross(r_pin_world, contact_normal), r_pin_world)
-        ang_impulse_term = np.dot(term_ball_ang + term_pin_ang, contact_normal)
-
-        impulse_denom = ball.inv_mass + pin.inv_mass + ang_impulse_term
-
-        if abs(impulse_denom) < 1e-9:
-            print("Warning: Impulse denominator near zero. Skipping impulse.")
-            return
-
-        impulse_j = -(1.0 + COLLISION_EPSILON) * v_rel_normal / impulse_denom
-        impulse_vector = impulse_j * contact_normal
-
-        # --- Apply Impulse ---
-        ball.vel += impulse_vector * ball.inv_mass
-        pin.vel -= impulse_vector * pin.inv_mass
-
-        ball.ang_vel += inv_I_ball_world @ np.cross(r_ball_world, impulse_vector)
-        pin.ang_vel -= inv_I_pin_world @ np.cross(r_pin_world, impulse_vector)
-
-        # print(f"Collision Resolved: j={impulse_j:.3f}")
-
-
+    # print(f"Collision Resolved: j={impulse_j:.3f}")
 def get_lowest_point_on_cylinder (quat, pos, radius, height, num_samples=20):
     """
     Finds the lowest point on both the top and bottom circle of a cylinder
