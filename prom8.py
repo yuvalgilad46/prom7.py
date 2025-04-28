@@ -251,10 +251,10 @@ class Pin(RigidBody):
 # --- Simulation Parameters ---
 DT = 0.01
 NUM_FRAMES = 500 # Increased frames
-COLLISION_EPSILON = 0.6 # Slightly less bouncy
+COLLISION_EPSILON = 0.75 # Slightly less bouncy
 GRAVITY = np.array([0.0, 0.0, -9.81])
-FLOOR_RESTITUTION = 0.5 # How much bounce off the floor
-FLOOR_FRICTION_COEFF = 0.35 # Coefficient of kinetic friction
+FLOOR_RESTITUTION = 0.1 # How much bounce off the floor
+FLOOR_FRICTION_COEFF = 0.3 # Coefficient of kinetic friction
 EARTH_RADIUS = 6371000 # Unused
 EARTH_MASS = 5.972168 * math.pow(10,24) # Unused
 is_paused = False
@@ -770,6 +770,54 @@ y_cap_unit = r_cap_grid_unit * np.sin(theta_cap_grid)
 # Dictionary to store plot artists for updating efficiently
 plot_artists = {}
 
+# def ball_movement_from_start():
+#     speed_vector = ball_1.vel/(np.sqrt(np.dot(ball_1.vel, ball_1.vel)))
+#     acceleration = np.array[]
+#
+#
+#
+# mu_k = 0.2  # Sliding friction coefficient
+# mu_r = 0.05  # Rolling friction coefficient
+#
+#
+# # Friction and normal force
+# normal_force = ball_1.mass * GRAVITY
+# kinetic_friction = mu_k * normal_force
+# rolling_friction = mu_r * normal_force
+#
+#
+# def ball_movement_from_start():
+#     # Compute linear acceleration due to kinetic friction or rolling friction
+#     if is_sliding():
+#         friction_force = kinetic_friction
+#     else:
+#         friction_force = rolling_friction
+#
+#     # Compute acceleration
+#     acceleration = friction_force / ball_1.mass
+#     ball_1.vel -= acceleration * DT  # Only update x-direction for simplicity
+#
+#     # Update position based on velocity
+#     ball_1.pos += ball_1.vel * DT
+#
+#     # Update angular velocity (simplified for rolling)
+#     angular_acceleration = friction_force * ball_1.radius / (2 / 5 * ball_1.mass *ball_1.radius ** 2)
+#     ball_1.ang_vel += angular_acceleration * DT
+#
+#     # Check for transition to rolling
+#     if abs(ball_1.vel) <= abs(ball_1.ang_vel * ball_1.radius):
+#         transition_to_rolling()
+#
+#
+# def is_sliding():
+#     return abs(ball_1.vel[0]) > abs(ball_1.ang_vel[0] * ball_1.radius)
+#
+#
+# def transition_to_rolling():
+#     # Switch to rolling friction and reduce sliding velocity
+#     pass
+
+
 def init_visualization():
     """Create plot artists for all objects."""
     global plot_artists
@@ -910,8 +958,8 @@ def pause(event):
 def play(event):
     global is_paused
     is_paused = False
-ax_pause = plt.axes([0.7, 0.02, 0.1, 0.05])
-ax_play = plt.axes([0.81, 0.02, 0.1, 0.05])
+ax_pause = plt.axes([0.7, 0.82, 0.1, 0.05])
+ax_play = plt.axes([0.81, 0.82, 0.1, 0.05])
 btn_pause = Button(ax_pause, 'Pause')
 btn_play = Button(ax_play, 'Play')
 btn_pause.on_clicked(pause)
@@ -967,75 +1015,74 @@ def update(frame):
 # --- Run Animation ---
 # Initialize visualization first to create artists
 init_visualization()
-for t in range(10):
-    # --- Initial States & Objects ---
-    ball_1 = Ball(obj_id='ball_1',
-                  pos=np.array([-1.5, 0.05+0.01*t, 0.109]),  # Start touching floor (CM at radius)
-                  vel=np.array([5.0, 0.0, 0.0]),  # Faster initial speed
-                  quat=Quaternion.identity(),
-                  ang_vel=np.array([0.0, 0.0, 0.0]),  # Maybe add initial spin later
-                  radius=0.109,
-                  mass=5.0)
+for t in range(1):
+    for n in range(1):
+        # --- Initial States & Objects ---
+        ball_1 = Ball(obj_id='ball_1',
+                      pos=np.array([-1.5, 0.065, 0.109]),  # Start touching floor (CM at radius)
+                      vel=np.array([5.0, 0.0, 0.0]),  # Faster initial speed
+                      quat=Quaternion.identity(),
+                      ang_vel=np.array([0.0, 0.0, 0.0]),  # Maybe add initial spin later
+                      radius=0.109,
+                      mass=5.0)
 
-    pins = []
-    # Standard 10-pin setup (approximate positions relative to origin (0,0))
-    # Distances are roughly: Row separation ~ sqrt(3)*PinDiam, Pin separation in row ~ 1.0*PinDiam
-    pin_radius = 0.06
-    pin_height = 0.38
-    pin_diam = 2 * pin_radius
-    row_sep = 0.3  # Adjusted spacing based on visual
-    pin_spacing = 0.3  # Adjusted spacing based on visual
+        pins = []
+        # Standard 10-pin setup (approximate positions relative to origin (0,0))
+        # Distances are roughly: Row separation ~ sqrt(3)*PinDiam, Pin separation in row ~ 1.0*PinDiam
+        pin_radius = 0.06
+        pin_height = 0.38
+        pin_diam = 2 * pin_radius
+        row_sep = 0.3  # Adjusted spacing based on visual
+        pin_spacing = 0.3  # Adjusted spacing based on visual
 
-    # Base positions of the pins
-    pin_base_positions = [
-        # Row 1
-        np.array([0.0, 0.0, 0.0]),  # Pin 1 (at origin for simplicity)
-        # # Row 2
-        np.array([row_sep, pin_spacing / 2.0, 0.0]),  # Pin 2
-        np.array([row_sep, -pin_spacing / 2.0, 0.0]),  # Pin 3
-        # Row 3
-        np.array([2 * row_sep, pin_spacing, 0.0]),  # Pin 4
-        np.array([2 * row_sep, 0.0, 0.0]),  # Pin 5
-        np.array([2 * row_sep, -pin_spacing, 0.0]),  # Pin 6
-        # Row 4
-        np.array([3 * row_sep, pin_spacing * 1.5, 0.0]),  # Pin 7
-        np.array([3 * row_sep, pin_spacing * 0.5, 0.0]),  # Pin 8
-        np.array([3 * row_sep, -pin_spacing * 0.5, 0.0]),  # Pin 9
-        np.array([3 * row_sep, -pin_spacing * 1.5, 0.0]),  # Pin 10
-    ]
+        # Base positions of the pins
+        pin_base_positions = [
+            # Row 1
+            np.array([0.0, 0.0, 0.0]),  # Pin 1 (at origin for simplicity)
+            # # Row 2
+            np.array([row_sep, pin_spacing / 2.0, 0.0]),  # Pin 2
+            np.array([row_sep, -pin_spacing / 2.0, 0.0]),  # Pin 3
+            # Row 3
+            np.array([2 * row_sep, pin_spacing, 0.0]),  # Pin 4
+            np.array([2 * row_sep, 0.0, 0.0]),  # Pin 5
+            np.array([2 * row_sep, -pin_spacing, 0.0]),  # Pin 6
+            # Row 4
+            np.array([3 * row_sep, pin_spacing * 1.5, 0.0]),  # Pin 7
+            np.array([3 * row_sep, pin_spacing * 0.5, 0.0]),  # Pin 8
+            np.array([3 * row_sep, -pin_spacing * 0.5, 0.0]),  # Pin 9
+            np.array([3 * row_sep, -pin_spacing * 1.5, 0.0]),  # Pin 10
+        ]
 
-    for i, base_pos in enumerate(pin_base_positions):
-        # Adjust initial position so the CENTER OF MASS is at base_pos + [0, 0, height/3]
-        initial_pin_cm_pos = base_pos + np.array([0.0, 0.0, pin_height / 3.0])
-        pins.append(Pin(obj_id=f'pin_{i + 1}',
-                        pos=initial_pin_cm_pos,  # This is the CM position
-                        vel=np.array([0.0, 0.0, 0.0]),
-                        quat=Quaternion.identity(),
-                        ang_vel=np.array([0.0, 0.0, 0.0]),
-                        radius=pin_radius,
-                        height=pin_height,
-                        mass=1.5))
+        for i, base_pos in enumerate(pin_base_positions):
+            # Adjust initial position so the CENTER OF MASS is at base_pos + [0, 0, height/3]
+            initial_pin_cm_pos = base_pos + np.array([0.0, 0.0, pin_height / 3.0])
+            pins.append(Pin(obj_id=f'pin_{i + 1}',
+                            pos=initial_pin_cm_pos,  # This is the CM position
+                            vel=np.array([0.0, 0.0, 0.0]),
+                            quat=Quaternion.identity(),
+                            ang_vel=np.array([0.0, 0.0, 0.0]),
+                            radius=pin_radius,
+                            height=pin_height,
+                            mass=1.5))
 
-    # Combine all simulation objects
-    sim_objects = [ball_1] + pins
-    for i in range(NUM_FRAMES):
-        update(i)
-    fallen = []
+        # Combine all simulation objects
+        sim_objects = [ball_1] + pins
+        # for i in range(NUM_FRAMES):
+        #     update(i)
+        fallen = []
 
-    ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES,
-                                  interval=max(1, int(DT * 1000)),
-                                  blit=False, # Blit=True is hard with 3D surface updates
-                                  repeat=False)
-    for pin in sim_objects:
-        if abs(pin.pos[2] - 0.12683664) > 0.004 and pin.obj_type == "cylinder":
-            fallen.append(pin.id)
-        # if pin.obj_type != "cylinder":
-        #     print(pin.ang_vel)
+        ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES,
+                                      interval=max(1, int(DT * 1000)),
+                                      blit=False, # Blit=True is hard with 3D surface updates
+                                      repeat=False)
+        for pin in sim_objects:
+            if abs(pin.pos[2] - 0.12683664) > 0.01 and pin.obj_type == "cylinder":
+                fallen.append(pin.id)
 
-    # print(t," fallen: ",fallen)
-    print(t," total: ",len(fallen))
-    # plt.show()
-    # plt.savefig(f'{0.01*t}_side.png')
+        # print(t," fallen: ",fallen)
+        print(t,",",n,",",len(fallen))
+        plt.show()
+        # plt.savefig(f'{t,n}.png')
 
 # plt.show()
 print("Animation finished or window closed.")
