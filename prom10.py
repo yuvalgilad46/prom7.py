@@ -270,7 +270,7 @@ is_paused = False
 # --- Initial States & Objects ---
 ball_1 = Ball(obj_id='ball_1',
               pos=np.array([-1.5, 0, 0.109]), # Start touching floor (CM at radius)
-              vel=np.array([8.0, 0.1, 0.0]),    # Faster initial speed
+              vel=np.array([0.0, 0.0, 0.0]),    # Faster initial speed
               quat=Quaternion.identity(),
               ang_vel=np.array([0.0, 0.0, 0.0]), # Maybe add initial spin later
               radius=0.109,
@@ -607,6 +607,42 @@ def get_lowest_point_on_cylinder_analytical(quat_wxyz, position, radius, height,
         return lowest_point_top_world
 
 # --- Floor Collision (Improved) ---
+
+def get_friction_coefficient_from_pos(x,y):
+    """
+    Returns the realistic friction coefficient at position (x, y) where:
+    - x = 0 is the head pin (end of lane)
+    - y = 0 is the left gutter
+    """
+    lane_length = 18.29      # meters
+    lane_width = 1.05        # meters
+    oil_length = 12.8        # oil covers up to 42 feet from foul line
+
+    # Flip x to match oil pattern direction (from foul line toward pins)
+    x_oil = lane_length - x
+
+    # Oil profile parameters
+    A = 1.0
+    sigma_y = 0.12
+    p = 2.2
+
+    # Friction parameters
+    mu_dry = 0.28
+    mu_oily = 0.05
+
+    # If beyond oil pattern, it's dry
+    if x_oil > oil_length:
+        return mu_dry
+
+    # Oil amount at (x, y)
+    oil = A * np.exp(-((y - lane_width / 2) / sigma_y) ** 2) * (1 - x_oil / oil_length) ** p
+    oil = max(0.0, min(oil, 1.0))
+
+    # Friction from oil
+    mu = mu_dry - (mu_dry - mu_oily) * oil
+    return mu
+
+
 def resolve_floor_collisions(objects, dt):
     """Checks and resolves floor collisions for all objects in the list."""
     contact_normal = np.array([0.0, 0.0, 1.0])  # Floor normal points up
@@ -796,10 +832,10 @@ def init_visualization():
     plot_artists = {} # Clear existing artists
 
     # Draw Ground Plane Static
-    plot_limit_x = 2.0 # Increased range for 10 pins
-    plot_limit_y = 1.0
-    plot_limit_z = 1.0
-    ax.set_xlim(-1.5, plot_limit_x) # Start behind ball
+    plot_limit_x = 20.0 # Increased range for 10 pins
+    plot_limit_y = 2.0
+    plot_limit_z = 2.0
+    ax.set_xlim(-10, 5) # Start behind ball
     ax.set_ylim(-plot_limit_y, plot_limit_y)
     ax.set_zlim(0, plot_limit_z) # Ensure Z starts from 0 (floor)
     ax.set_xlabel('X (m)')
@@ -941,6 +977,8 @@ btn_play.on_clicked(play)
 # --- Main Simulation Loop (Update Function for Animation) ---
 def update(frame):
     """Updates the animation frame"""
+    # print("vel",ball_1.vel)
+    # print("ang",ball_1.ang_vel)
     # Declare that we are using the global variables sim_objects and is_paused
     global sim_objects, is_paused, ani # Add ani here as well for error handling
 
@@ -950,20 +988,26 @@ def update(frame):
         return ax,
 
     try:
+        if ball_1.pos[0] > -0.5:
+
         # --- Physics Steps ---
         # 1. Integrate motion for all objects
-        for obj in sim_objects:
-            rk45_step(obj, DT)
+            for obj in sim_objects:
+                rk45_step(obj, DT)
         # --- Collision Handling ---
         # 2. Check and resolve floor collisions first (stable base)
-        resolve_floor_collisions(sim_objects, DT) # Pass the list
+            resolve_floor_collisions(sim_objects, DT) # Pass the list
 
-        # 3. Check and resolve object-object collisions
-        for i in range(len(sim_objects)):
-            for j in range(i + 1, len(sim_objects)):
-                obj1 = sim_objects[i]
-                obj2 = sim_objects[j]
-                check_and_resolve_collision(obj1, obj2) # Modifies objects in place
+            # 3. Check and resolve object-object collisions
+            for i in range(len(sim_objects)):
+                for j in range(i + 1, len(sim_objects)):
+                    obj1 = sim_objects[i]
+                    obj2 = sim_objects[j]
+                    check_and_resolve_collision(obj1, obj2) # Modifies objects in place
+        else:
+            rk45_step(ball_1, DT)
+            resolve_floor_collisions([ball_1], DT) # Pass the list
+
 
         # --- Update Visualization ---
 
@@ -988,76 +1032,78 @@ def update(frame):
 # Initialize visualization first to create artists
 init_visualization()
 results = []
-for t in range(1):
-    for n in range(1):
-        # --- Initial States & Objects ---
-        ball_1 = Ball(obj_id='ball_1',
-                      pos=np.array([-1.5, -0.5+0.05*10, 0.109]),  # Start touching floor (CM at radius)
-                      vel=np.array([5.0, 0.0, 0.0]),  # Faster initial speed
-                      quat=Quaternion.identity(),
-                      ang_vel=np.array([0,0,0]),  # Maybe add initial spin later
-                      radius=0.109,
-                      mass=5.0)
+for r in range(20):
+    for t in range(20):
+        for n in range(20):
+            # --- Initial States & Objects ---
+            ball_1 = Ball(obj_id='ball_1',
+                          pos=np.array([-1.5, (0.5/20)*t, 0.109]),  # Start touching floor (CM at radius)
+                          vel=np.array([(10/20)*3, -(2/20)*n, 0.0]),  # Faster initial speed
+                          quat=Quaternion.identity(),
+                          ang_vel=np.array([0,0,0]),  # Maybe add initial spin later
+                          radius=0.109,
+                          mass=5.0)
 
-        pins = []
-        # Standard 10-pin setup (approximate positions relative to origin (0,0))
-        # Distances are roughly: Row separation ~ sqrt(3)*PinDiam, Pin separation in row ~ 1.0*PinDiam
-        pin_radius = 0.06
-        pin_height = 0.38
-        pin_diam = 2 * pin_radius
-        row_sep = 0.3  # Adjusted spacing based on visual
-        pin_spacing = 0.3  # Adjusted spacing based on visual
 
-        # Base positions of the pins
-        pin_base_positions = [
-            # Row 1
-            np.array([0.0, 0.0, 0.0]),  # Pin 1 (at origin for simplicity)
-            # # Row 2
-            np.array([row_sep, pin_spacing / 2.0, 0.0]),  # Pin 2
-            np.array([row_sep, -pin_spacing / 2.0, 0.0]),  # Pin 3
-            # Row 3
-            np.array([2 * row_sep, pin_spacing, 0.0]),  # Pin 4
-            np.array([2 * row_sep, 0.0, 0.0]),  # Pin 5
-            np.array([2 * row_sep, -pin_spacing, 0.0]),  # Pin 6
-            # Row 4
-            np.array([3 * row_sep, pin_spacing * 1.5, 0.0]),  # Pin 7
-            np.array([3 * row_sep, pin_spacing * 0.5, 0.0]),  # Pin 8
-            np.array([3 * row_sep, -pin_spacing * 0.5, 0.0]),  # Pin 9
-            np.array([3 * row_sep, -pin_spacing * 1.5, 0.0]),  # Pin 10
-        ]
+            pins = []
+            # Standard 10-pin setup (approximate positions relative to origin (0,0))
+            # Distances are roughly: Row separation ~ sqrt(3)*PinDiam, Pin separation in row ~ 1.0*PinDiam
+            pin_radius = 0.06
+            pin_height = 0.38
+            pin_diam = 2 * pin_radius
+            row_sep = 0.3  # Adjusted spacing based on visual
+            pin_spacing = 0.3  # Adjusted spacing based on visual
 
-        for i, base_pos in enumerate(pin_base_positions):
-            # Adjust initial position so the CENTER OF MASS is at base_pos + [0, 0, height/3]
-            initial_pin_cm_pos = base_pos + np.array([0.0, 0.0, pin_height / 3.0])
-            pins.append(Pin(obj_id=f'pin_{i + 1}',
-                            pos=initial_pin_cm_pos,  # This is the CM position
-                            vel=np.array([0.0, 0.0, 0.0]),
-                            quat=Quaternion.identity(),
-                            ang_vel=np.array([0.0, 0.0, 0.0]),
-                            radius=pin_radius,
-                            height=pin_height,
-                            mass=1.5,
-                            radius_bottom=pin_bottom_radius))
+            # Base positions of the pins
+            pin_base_positions = [
+                # Row 1
+                np.array([0.0, 0.0, 0.0]),  # Pin 1 (at origin for simplicity)
+                # # Row 2
+                np.array([row_sep, pin_spacing / 2.0, 0.0]),  # Pin 2
+                np.array([row_sep, -pin_spacing / 2.0, 0.0]),  # Pin 3
+                # Row 3
+                np.array([2 * row_sep, pin_spacing, 0.0]),  # Pin 4
+                np.array([2 * row_sep, 0.0, 0.0]),  # Pin 5
+                np.array([2 * row_sep, -pin_spacing, 0.0]),  # Pin 6
+                # Row 4
+                np.array([3 * row_sep, pin_spacing * 1.5, 0.0]),  # Pin 7
+                np.array([3 * row_sep, pin_spacing * 0.5, 0.0]),  # Pin 8
+                np.array([3 * row_sep, -pin_spacing * 0.5, 0.0]),  # Pin 9
+                np.array([3 * row_sep, -pin_spacing * 1.5, 0.0]),  # Pin 10
+            ]
 
-        # Combine all simulation objects
-        sim_objects = [ball_1] + pins
-        # for i in range(NUM_FRAMES):
-        #     update(i)
-        fallen = []
+            for i, base_pos in enumerate(pin_base_positions):
+                # Adjust initial position so the CENTER OF MASS is at base_pos + [0, 0, height/3]
+                initial_pin_cm_pos = base_pos + np.array([0.0, 0.0, pin_height / 3.0])
+                pins.append(Pin(obj_id=f'pin_{i + 1}',
+                                pos=initial_pin_cm_pos,  # This is the CM position
+                                vel=np.array([0.0, 0.0, 0.0]),
+                                quat=Quaternion.identity(),
+                                ang_vel=np.array([0.0, 0.0, 0.0]),
+                                radius=pin_radius,
+                                height=pin_height,
+                                mass=1.5,
+                                radius_bottom=pin_bottom_radius))
 
-        ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES,
-                                      interval=max(1, int(DT * 1000)),
-                                      blit=False, # Blit=True is hard with 3D surface updates
-                                      repeat=False)
-        for pin in sim_objects:
-            if abs(pin.pos[2] - 0.12683664) > 0.01 and pin.obj_type == "cylinder":
-                fallen.append(pin.id)
+            # Combine all simulation objects
+            sim_objects = [ball_1] + pins
+            for i in range(NUM_FRAMES):
+                update(i)
+            fallen = []
 
-        # print(t," fallen: ",fallen)
-        print(t,",",n,",",len(fallen))
-        plt.show()
-        results.append([t,n,len(fallen)])
-        # plt.savefig(f'{t,n}.png')
+            # ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES,
+            #                               interval=max(1, int(DT * 1000)),
+            #                               blit=False, # Blit=True is hard with 3D surface updates
+            #                               repeat=False)
+            for pin in sim_objects:
+                if abs(pin.pos[2] - 0.12683664) > 0.01 and pin.obj_type == "cylinder":
+                    fallen.append(pin.id)
+
+            # print(t," fallen: ",fallen)
+            print((0.5/20)*t,",",-(2/20)*n,",",(10/20)*r,",",len(fallen))
+            # plt.show()
+            results.append([-0.5+(1/40)*t,-1+(2/60)*n,len(fallen)])
+            # plt.savefig(f'{t,n}.png')
 
 # plt.show()
 print(results)
