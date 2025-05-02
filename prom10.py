@@ -1032,13 +1032,13 @@ def update(frame):
 # Initialize visualization first to create artists
 init_visualization()
 results = []
-for r in range(20):
-    for t in range(20):
-        for n in range(20):
+for t in range(20):
+    for n in range(20):
+        for r in range(20):
             # --- Initial States & Objects ---
             ball_1 = Ball(obj_id='ball_1',
                           pos=np.array([-1.5, (0.5/20)*t, 0.109]),  # Start touching floor (CM at radius)
-                          vel=np.array([(10/20)*3, -(2/20)*n, 0.0]),  # Faster initial speed
+                          vel=np.array([(10/20)*r, -(2/20)*n, 0.0]),  # Faster initial speed
                           quat=Quaternion.identity(),
                           ang_vel=np.array([0,0,0]),  # Maybe add initial spin later
                           radius=0.109,
@@ -1102,7 +1102,7 @@ for r in range(20):
             # print(t," fallen: ",fallen)
             print((0.5/20)*t,",",-(2/20)*n,",",(10/20)*r,",",len(fallen))
             # plt.show()
-            results.append([-0.5+(1/40)*t,-1+(2/60)*n,len(fallen)])
+            results.append([(0.5/20)*t,-(2/20)*n,(10/20)*r,len(fallen)])
             # plt.savefig(f'{t,n}.png')
 
 # plt.show()
