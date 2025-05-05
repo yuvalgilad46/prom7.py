@@ -1610,6 +1610,7 @@ array = []
 for line in data.strip().splitlines():
     parts = [int(x.strip()) for x in line.split(',')]
     array.append(parts)
+
 print(array)
 print(array[2][2])
 

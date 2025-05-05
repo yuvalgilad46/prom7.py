@@ -832,10 +832,10 @@ def init_visualization():
     plot_artists = {} # Clear existing artists
 
     # Draw Ground Plane Static
-    plot_limit_x = 20.0 # Increased range for 10 pins
+    plot_limit_x = 2.0 # Increased range for 10 pins
     plot_limit_y = 2.0
     plot_limit_z = 2.0
-    ax.set_xlim(-10, 5) # Start behind ball
+    ax.set_xlim(-3, 2) # Start behind ball
     ax.set_ylim(-plot_limit_y, plot_limit_y)
     ax.set_zlim(0, plot_limit_z) # Ensure Z starts from 0 (floor)
     ax.set_xlabel('X (m)')
@@ -1032,13 +1032,13 @@ def update(frame):
 # Initialize visualization first to create artists
 init_visualization()
 results = []
-for t in range(20):
-    for n in range(20):
-        for r in range(20):
+for t in range(1):
+    for n in range(1):
+        for r in range(1):
             # --- Initial States & Objects ---
             ball_1 = Ball(obj_id='ball_1',
-                          pos=np.array([-1.5, (0.5/20)*t, 0.109]),  # Start touching floor (CM at radius)
-                          vel=np.array([(10/20)*r, -(2/20)*n, 0.0]),  # Faster initial speed
+                          pos=np.array([-1.5, (0.5/20)*t-1+0.05*17, 0.109]),  # Start touching floor (CM at radius)
+                          vel=np.array([(10/20)*r+5,-1+0.05*26 -(2/20)*n, 0.0]),  # Faster initial speed
                           quat=Quaternion.identity(),
                           ang_vel=np.array([0,0,0]),  # Maybe add initial spin later
                           radius=0.109,
@@ -1087,21 +1087,21 @@ for t in range(20):
 
             # Combine all simulation objects
             sim_objects = [ball_1] + pins
-            for i in range(NUM_FRAMES):
-                update(i)
+            # for i in range(NUM_FRAMES):
+            #     update(i)
             fallen = []
 
-            # ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES,
-            #                               interval=max(1, int(DT * 1000)),
-            #                               blit=False, # Blit=True is hard with 3D surface updates
-            #                               repeat=False)
+            ani = animation.FuncAnimation(fig, update, frames=NUM_FRAMES+1000,
+                                          interval=max(1, int(DT * 1000)),
+                                          blit=False, # Blit=True is hard with 3D surface updates
+                                          repeat=False)
             for pin in sim_objects:
                 if abs(pin.pos[2] - 0.12683664) > 0.01 and pin.obj_type == "cylinder":
                     fallen.append(pin.id)
 
             # print(t," fallen: ",fallen)
             print((0.5/20)*t,",",-(2/20)*n,",",(10/20)*r,",",len(fallen))
-            # plt.show()
+            plt.show()
             results.append([(0.5/20)*t,-(2/20)*n,(10/20)*r,len(fallen)])
             # plt.savefig(f'{t,n}.png')
 
